@@ -1,6 +1,7 @@
-<img width="1512" height="320" alt="crivens2_8x" src="https://github.com/user-attachments/assets/3968ef1b-3441-4186-b5b3-c903605873cd" /> <img width="128" height="128" alt="butler" src="https://github.com/user-attachments/assets/1c017424-bcca-4670-8f39-02ae9b981297" />
-
-# crivens
+<p align="center">
+  <img width="600" alt="crivens" src="https://github.com/user-attachments/assets/3968ef1b-3441-4186-b5b3-c903605873cd" />
+  <img width="110" alt="Crivens the butler" src="https://github.com/user-attachments/assets/1c017424-bcca-4670-8f39-02ae9b981297" />
+</p>
 
 Tools for taking apart and modding Grabbed by the Ghoulies (Xbox, 2003).
 
@@ -10,13 +11,12 @@ Tools for taking apart and modding Grabbed by the Ghoulies (Xbox, 2003).
 - Rebuild .bnl bundles with any size changes and pack a bootable disc
 - Write new geometry into character models, e.g. replacing Cooper with another character
 
-
-<img width="1859" height="1343" alt="{B66585B9-8B9B-45F4-B12E-C79784419CAE}" src="https://github.com/user-attachments/assets/79a01a50-fc5e-40fd-8978-1e9e686ae143" />
-
-<img width="1816" height="1360" alt="{54BFDBAC-FAFA-489F-ABFD-41C93234BF92}" src="https://github.com/user-attachments/assets/57f6f11b-974a-48a7-9ece-7ab643946939" />
-
-
-
+<p align="center">
+  <img width="49%" alt="Sonic replacing Cooper in the basement" src="https://github.com/user-attachments/assets/79a01a50-fc5e-40fd-8978-1e9e686ae143" />
+  <img width="49%" alt="Sonic from behind in the basement" src="https://github.com/user-attachments/assets/57f6f11b-974a-48a7-9ece-7ab643946939" />
+  <br>
+  <em>Sonic swapped in for Cooper, running on xemu. How it's done: <a href="docs/MODDING.md#replacing-cooper-with-another-character">docs/MODDING.md</a></em>
+</p>
 
 Works with the USA disc. You need your own copy of the game; no game files are included.
 
