@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+extract/target/
+extract/Cargo.lock
+
+# game data and outputs
+*.iso
+*.xbe
+*.bnl
+*.xwb
+iso_root/
+assets/
+rigged/
+*.glb
+*.npz
+*.png
+extract/deps/

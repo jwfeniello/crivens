@@ -1,0 +1,9 @@
+[package]
+name = "ghoul_extract"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bnl = { path = "deps/bnl" }  # extract_all.py clones luboise/bnl + gltf_writer into deps/ and applies bnl_fixes.patch
+serde_json = "1.0.145"
+walkdir = "2.5.0"
