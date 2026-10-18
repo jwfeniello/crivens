@@ -5,6 +5,7 @@ usage: python -I build_mod.py <mod_dir> <iso_root> <work_root> <out.iso> <extrac
 <mod_dir> layout (all optional):
   scripts/<script asset name>.gscript        e.g. aid_script_ghoulies_chapter1_scene1_2playcam.gscript
   textures/<model asset name>/<index>.png    e.g. aid_model_ghoulies_actor_boy/8.png (same size, DXT1)
+  assets/<asset name>/descriptor, resource0..N   whole-asset replacement (e.g. sonic_build.py output)
 
 <iso_root>  unmodified extracted disc (never written to)
 <work_root> full copy of the disc that gets modded bundles; bundles changed by a previous build
@@ -35,12 +36,20 @@ mod_dir, iso_root, work_root, out_iso, extract_xiso = map(Path, sys.argv[1:6])
 
 # ---- collect the requested changes
 script_mods = {p.stem: gs.asm(p.read_text()) for p in sorted((mod_dir / "scripts").glob("*.gscript"))}
+# whole-asset replacements: assets/<asset name>/descriptor + resource0..N (applied before texture edits)
+raw_mods = {}
+for d in sorted((mod_dir / "assets").glob("*")):
+    if (d / "descriptor").exists():
+        chunks = []
+        while (d / f"resource{len(chunks)}").exists():
+            chunks.append((d / f"resource{len(chunks)}").read_bytes())
+        raw_mods[d.name] = ((d / "descriptor").read_bytes(), chunks)
 tex_mods = {}
 for d in sorted((mod_dir / "textures").glob("*")):
     if d.is_dir():
         tex_mods[d.name] = {int(p.stem): p for p in d.glob("*.png")}
-wanted = set(script_mods) | set(tex_mods)
-print(f"mod: {len(script_mods)} script(s), {sum(len(v) for v in tex_mods.values())} texture(s) in {len(tex_mods)} model(s)")
+wanted = set(script_mods) | set(tex_mods) | set(raw_mods)
+print(f"mod: {len(script_mods)} script(s), {len(raw_mods)} replaced asset(s), {sum(len(v) for v in tex_mods.values())} texture(s) in {len(tex_mods)} model(s)")
 
 
 def retexture(asset, replacements):
@@ -85,6 +94,8 @@ for bnl in sorted(iso_root.rglob("*.bnl")):
         found.add(a.name)
         if a.name in script_mods:
             a.descriptor = script_mods[a.name]
+        if a.name in raw_mods:
+            a.descriptor, a.chunks = raw_mods[a.name]
         if a.name in tex_mods:
             retexture(a, tex_mods[a.name])
     rel = bnl.relative_to(iso_root)
