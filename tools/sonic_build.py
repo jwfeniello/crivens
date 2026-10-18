@@ -5,6 +5,10 @@ positions, so the skeleton can be moved onto Sonic's joints and Sonic keeps his 
 Each Sonic bone is mapped to a Cooper bone; weights are summed per Cooper bone (max 2 per vertex).
 
 usage: python -I sonic_build.py <Model__aid_model_ghoulies_actor_boy dir> <sonic.npz> <textures dir> <out_dir> [height]
+       [--fit-textures]
+
+Sonic's textures are added at their own size in a new resource chunk and the materials are pointed
+at them. --fit-textures instead shrinks them into Cooper's texture slots (no new chunk).
 """
 import struct
 import sys
@@ -19,8 +23,10 @@ import matplotlib.image as mpimg  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ghoul_modelwrite as mw  # noqa: E402
 
-src, npz, tex_dir, out = map(Path, sys.argv[1:5])
-height = float(sys.argv[5]) if len(sys.argv) > 5 else 21.0  # Cooper is ~21 units tall
+full_textures = "--fit-textures" not in sys.argv
+argv = [a for a in sys.argv[1:] if not a.startswith("--")]
+src, npz, tex_dir, out = map(Path, argv[:4])
+height = float(argv[4]) if len(argv) > 4 else 21.0  # Cooper is ~21 units tall
 
 # Sonic bone -> Cooper bone ("{s}" = LF for +X, RT for -X; the character's left is +X)
 SIDE_MAP = {
@@ -44,7 +50,7 @@ JOINTS = {"BASE": "Bone003", "BACK": "Bone004", "BACK_A": "Bone005", "NECK": "Bo
           "RT_A": "Bone051", "RT_T": "Bone052"}
 HAND_PARTS = {"N114", "N115"}  # hand meshes are weighted to the forearm in the rip; bind them to the wrist
 # Sonic texture -> (Cooper material = blend ndShaderParam2 of ndShader2 #, that material's colour0
-# texture, overwritten in place so the texture list and resource layout don't change)
+# texture: used as the template for the new texture, or overwritten in place with --fit-textures)
 MATERIALS = {"ch_sonic_a.png": (0, 11), "ch_sonic_b.png": (4, 8), "ch_sonic_eye.png": (2, 7)}
 
 d = np.load(npz)
@@ -104,7 +110,7 @@ for i, b in enumerate(bones):
     model.put(sk + 0x20 * i + 4, "<3f", *local)
     model.put(sk + 0x20 * i + 0x10, "<3f", *new_glob[i])
 
-# ---- textures: box-filter down to the replaced texture's size
+# ---- textures: add at full size, or box-filter down to the replaced texture's size
 mats = {si: sp for si, var, sp in model.materials() if var == "blend"}
 tex_names = list(d["tex_names"])
 material_of_tex = {}
@@ -114,12 +120,17 @@ for t, (si, ti) in MATERIALS.items():
         img = np.round(img * 255).astype(np.uint8)
     if img.shape[2] == 3:
         img = np.dstack([img, np.full(img.shape[:2], 255, np.uint8)])
-    _t7, _n, lst = model.texture_list()
-    tw = struct.unpack_from("<H", model.desc, mw.u32(model.desc, lst + 4 * ti) + 8)[0]
-    while img.shape[0] > tw:
-        img = img.reshape(img.shape[0] // 2, 2, img.shape[1] // 2, 2, 4).mean((1, 3)).round().astype(np.uint8)
     img[..., 3] = 255
-    model.replace_texture(ti, img)
+    if full_textures:
+        new = model.add_texture(img, ti)
+        model.set_material_texture(mats[si].off, new)
+        ti = new
+    else:
+        _t7, _n, lst = model.texture_list()
+        tw = struct.unpack_from("<H", model.desc, mw.u32(model.desc, lst + 4 * ti) + 8)[0]
+        while img.shape[0] > tw:
+            img = img.reshape(img.shape[0] // 2, 2, img.shape[1] // 2, 2, 4).mean((1, 3)).round().astype(np.uint8)
+        model.replace_texture(ti, img)
     material_of_tex[tex_names.index(t)] = mats[si].off
     print(f"{t} -> texture {ti} ({img.shape[1]}x{img.shape[0]}) on ndShader2 {si}")
 

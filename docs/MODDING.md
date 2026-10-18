@@ -51,12 +51,14 @@ python -I tools/ghoul_script.py asm <in.gscript> <out.bin>
 These are what `ghoul_modelwrite.py` follows. Breaking any of them crashes the game or draws
 garbage.
 
-- **Each resource chunk is its own allocation** (`XPhysicalAlloc` per chunk at load time). Offsets in
+- **Each resource chunk is its own allocation** (`XPhysicalAlloc`, 128-byte aligned, no limit on the
+  number of chunks). Offsets in
   the descriptor index the concatenation of all chunks, but the game translates each one into a
   single chunk. So:
   - Vertex streams are offsets from the mesh base (footer type 0, +4; chunk 0 for Cooper) and
     must all be inside that one chunk. New vertex data goes at the end of chunk 0.
   - A texture can't span two chunks.
+  - New textures go in a new last chunk (`Model.add_texture`), so nothing else moves.
 - **Growing chunk 0 moves everything after it.** Every texture whose offset is past the old end of
   chunk 0 has to be shifted by the same amount.
 - **Texture record** (64 bytes): u32 format, u32 0x1c, u16 width, u16 height, u32 flags (top byte =
@@ -64,8 +66,10 @@ garbage.
 - **Keep the node tree intact.** The game finds nodes like Cooper's face (`ndBlendShape`) at runtime.
   Unlinking one crashes on spawn. To hide geometry, zero its index lists instead
   (`Model.hide_blend_shape`).
-- **Replace textures in place** (`Model.replace_texture`) rather than adding new ones. Same size,
-  single-level DXT1.
+- **Textures:** `Model.add_texture` adds a texture of any size and `Model.set_material_texture`
+  points a material at it. `Model.replace_texture` overwrites one in place (same size, single-level
+  DXT1). The byte at +0x0E registers a texture in a global texture bank; it's 0 on Cooper's, so
+  copying one of his records as a template is fine.
 - Each node has a slot in a per-instance runtime buffer (ndHeader +0x0C). MeshHeader +0 is the
   buffer size. New ndRigidSkinIdx / ndPushBuffer nodes take 4 bytes each.
 - Draws go under the **blend** variant of an ndShader2 (2 bones per vertex). Skin slot floats are
@@ -99,11 +103,13 @@ The Sonic example (I used Sonic Unleashed (Wii) rip from The Models Resource):
    `blender/bl_parts.py` renders every part so you can choose.
 2. Build the model asset:
    ```
-   python -I tools/sonic_build.py <Model__aid_model_ghoulies_actor_boy dir> sonic.npz <Textures dir> <out_dir> [height]
+   python -I tools/sonic_build.py <Model__aid_model_ghoulies_actor_boy dir> sonic.npz <Textures dir> <out_dir> [height] [--fit-textures]
    ```
    This moves Cooper's skeleton onto Sonic's joints, maps Sonic's bones to Cooper's (table at the
-   top of the script), writes the geometry, puts the three textures over Cooper's skin (11),
-   jumper (8) and texture 7, and hides Cooper's face. Height defaults to 21 (Cooper's height).
+   top of the script), writes the geometry, adds Sonic's three textures at full size on the
+   materials that used Cooper's skin (11), jumper (8) and texture 7, and hides Cooper's face.
+   Height defaults to 21 (Cooper's height). `--fit-textures` shrinks the textures into Cooper's
+   slots instead of adding new ones.
 3. Copy `out_dir` to `<mod_dir>/assets/aid_model_ghoulies_actor_boy/` and build the disc.
 
 For a different character, change the bone map, part list and material table in
