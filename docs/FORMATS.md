@@ -60,11 +60,20 @@ Nodes (`ndHeader`, 0x20 bytes): name*, u16 type, u16 drawMask, ?, ?, ?, child*, 
 | ndMtxArray | entries* (8 bytes: u16 bone, u16, u8, u8 flag, u8 matrixIndex, u8), u32 count, ..., +0x2C matrices*, +0x30 count |
 | ndRigidSkinIdx | u8* palette, u32 count |
 | ndPushBuffer | u32 draws, ..., +0x30 index ptrs*, +0x34 prim types*, +0x38 counts* (u16 indices; 6 = tri strip) |
-| ndBlendShape | ndVertexBuffer** list, u32 count: base buffer, then morph targets stored as **offsets** |
+| ndBlendShape | ndVertexBuffer** list, u32 count: base buffer, then morph targets stored as **offsets**. +0x26 u8: 0 = blend on the GPU, else on the CPU |
 | ndShaderParam2 | payload*: ps consts*, vs consts*, tex assigns* (28 bytes, u32 texture index first), counts..., +0x24 attrs* (16 bytes: name*, v1, v2) |
 
 **Vertex stream types:** 9 = position f32x3, 10 = normal f32x3, 13 = UV f32x2,
 0 = skin slots f32x2, 8 = skin weights f32x2, 11 = colour (4 bytes).
+
+**Blend shapes (faces):** each target is a full vertex buffer with the same vertex count as the
+base; its position (and normal) streams hold offsets from the base. The targets are named in the
+MeshHeader key/value map as `MORPH_TARGET_<NAME>` (value = the target's weight slot, 4 bytes
+apart in target order); the game looks them up by name (`MeshHeaderInstance::loadMorphTargets`).
+Cooper's, in order: BLINK, ANGRY, ANGRY1, HIT, MOUTH_OPEN, SMILE, HIT1, HIT2, HAIR_SPIKE, SCARED,
+RAISE_BROW, CHEEK_BLOW. On the GPU path (`ndBlendShape::update`) the 8 highest-weighted targets
+are bound to the base buffer's empty stream slots 27-34 and added in the vertex shader, so only
+positions are morphed there.
 
 **Skinning:** a vertex's skin slot value is `24 + 3*slot`, because each matrix takes 3 shader
 registers starting at c[0x78]. Its palette entry = `mtxArray.entries[palette[slot]]`, with up to
@@ -98,5 +107,4 @@ stopping at `num_keyframes`.
 - Root motion is baked onto the armature by default (`ghoul_gltf.py --no-root-motion` gives
   in-place animations). Locomotion cycles have none, because the game moves the actor itself.
 - Per-bone parent-scale compensation flags are decoded but can't be represented in glTF.
-- Blend shape (expression) names aren't stored, so they're exported as `blend_N`.
 - The Rare cel-shading ramp and lightmap textures aren't wired into the glTF materials.

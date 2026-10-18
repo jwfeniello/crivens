@@ -341,7 +341,10 @@ def main():
         mesh = {"name": f"mesh{gi}{'_face' if mviews else ''}", "primitives": prims}
         if mviews:
             mesh["weights"] = [0.0] * len(mviews)
-            mesh["extras"] = {"targetNames": [f"blend_{k + 1}" for k in range(len(mviews))]}
+            target_names = gm.morph_target_names(mb)
+            if len(target_names) != len(mviews):
+                target_names = [f"blend_{k + 1}" for k in range(len(mviews))]
+            mesh["extras"] = {"targetNames": target_names}
         g["meshes"].append(mesh)
         nd = B.node(name=mesh["name"], mesh=len(g["meshes"]) - 1)
         if skel:

@@ -41,6 +41,7 @@ class Vertex:
     col: bytes          # 4 bytes as stored (D3DCOLOR)
     bones: tuple        # 1 or 2 skeleton bone indices
     weights: tuple      # matching weights
+    deltas: tuple = ()  # face only: one position offset (x, y, z) per morph target
 
 
 @dataclass
@@ -243,7 +244,24 @@ class Model:
         raise ValueError(f"material @ {sp2_off:#x} has no colour0 texture slot")
 
     # ---------------------------------------------------------------- geometry
-    def write_geometry(self, groups: list, unlink_head=False):
+    def face(self):
+        """(ndBlendShape node, its vertex buffers: base first, then one per morph target)."""
+        bs = next(c for c in self.skel.children if c.name == "ndBlendShape")
+        return bs, [gm.Node(self.mb, p) for p in bs.data["vertex_buffers"]]
+
+    def morph_target_names(self):
+        return gm.morph_target_names(self.mb)
+
+    def write_face(self, groups: list):
+        """Replace the blend-shape head. Every vertex needs one delta per morph target
+        (Vertex.deltas, same order as morph_target_names()); use (0, 0, 0) for no movement.
+        Materials are ndShaderParam2s inside the ndBlendShape subtree."""
+        bs, vbs = self.face()
+        mtx = next(c for c in bs.children if c.name == "ndMtxArray")
+        sps = [n for n in self.nodes(bs) if n.name == "ndShaderParam2"]
+        return self.write_geometry(groups, vb=vbs[0], mtx=mtx, sps=sps, targets=vbs[1:])
+
+    def write_geometry(self, groups: list, unlink_head=False, vb=None, mtx=None, sps=None, targets=()):
         # 1. chunk every group by bone budget, duplicating vertices per chunk
         chunks = []  # (material, palette(list of bones), local vertices, indices)
         for g in groups:
@@ -264,10 +282,14 @@ class Model:
         used = sorted({b for _m, pal, _t in chunks for b in pal})
         entry_of = {b: k for k, b in enumerate(used)}
         entries = b"".join(struct.pack("<HHBBBB", b, 0xFFFF, 0x7F, 2, 0xFF, 0) for b in used)
-        self.put(self.mtx.off + 0x20, "<II", self.mesh_ptr(entries), len(used))
+        vb = vb or self.body_vb
+        mtx = mtx or self.mtx
+        if sps is None:
+            sps = [sp for _si, _var, sp in self.materials()]
+        self.put(mtx.off + 0x20, "<II", self.mesh_ptr(entries), len(used))
 
         # 3. vertex streams
-        P, N, UV, C, S, W, draws = [], [], [], [], [], [], []
+        P, N, UV, C, S, W, D, draws = [], [], [], [], [], [], [], []
         for mat, pal, tris in chunks:
             slot = {b: k for k, b in enumerate(pal)}
             local, index = {}, []
@@ -284,6 +306,10 @@ class Model:
                         w = list(v.weights) + [0.0]
                         S.append((s[0], s[1] if len(v.bones) > 1 else 0.0))
                         W.append((w[0], w[1] if len(v.bones) > 1 else 0.0))
+                        if targets:
+                            if len(v.deltas) != len(targets):
+                                raise ValueError(f"vertex has {len(v.deltas)} deltas, need {len(targets)}")
+                            D.append(v.deltas)
                     index.append(local[key])
             draws.append((mat, [entry_of[b] for b in pal], index))
         if len(P) > 65535:
@@ -293,22 +319,38 @@ class Model:
             13: np.asarray(UV, "<f4").tobytes(), 11: b"".join(C),
             0: np.asarray(S, "<f4").tobytes(), 8: np.asarray(W, "<f4").tobytes(),
         }
-        vp = u32(self.mb, self.body_vb.off + 0x20)
-        for k, v in enumerate(self.body_vb.data["views"]):
+        where = {}
+        vp = u32(self.mb, vb.off + 0x20)
+        for k, v in enumerate(vb.data["views"]):
             if v["type"] in stream_data:
                 data = stream_data[v["type"]]
-                self.put(vp + 0x18 * k + 0x10, "<II", self.vertex_ptr(data), len(data))
+                where[v["type"]] = (self.vertex_ptr(data), len(data))
+                self.put(vp + 0x18 * k + 0x10, "<II", *where[v["type"]])
+        # morph targets: position offsets of their own, zero normal offsets, the rest shared
+        zero_nrm = self.vertex_ptr(bytes(len(stream_data[10]))) if targets else None
+        for t, tvb in enumerate(targets):
+            tvp = u32(self.mb, tvb.off + 0x20)
+            for k, v in enumerate(tvb.data["views"]):
+                if not v["size"]:
+                    continue
+                if v["type"] == 9:
+                    data = np.asarray([d[t] for d in D], "<f4").tobytes()
+                    self.put(tvp + 0x18 * k + 0x10, "<II", self.vertex_ptr(data), len(data))
+                elif v["type"] == 10:
+                    self.put(tvp + 0x18 * k + 0x10, "<II", zero_nrm, len(stream_data[10]))
+                elif v["type"] in where:
+                    self.put(tvp + 0x18 * k + 0x10, "<II", *where[v["type"]])
 
         # 4. draw nodes under each material; detach every other material's draws
-        tmpl_rsi = next(n for n in self.nodes(self.body_vb) if n.name == "ndRigidSkinIdx")
-        tmpl_pb = next(n for n in self.nodes(self.body_vb) if n.name == "ndPushBuffer")
+        tmpl_rsi = next(n for n in self.nodes(mtx) if n.name == "ndRigidSkinIdx")
+        tmpl_pb = next(n for n in self.nodes(mtx) if n.name == "ndPushBuffer")
         rsi_hdr = bytes(self.mb[tmpl_rsi.off: tmpl_rsi.off + 0x28])
         pb_hdr = bytes(self.mb[tmpl_pb.off: tmpl_pb.off + 0x40])
         varsize = self.get(0, "<I")[0]
         by_mat = {}
         for mat, pal, index in draws:
             by_mat.setdefault(mat, []).append((pal, index))
-        for _si, _var, sp in self.materials():
+        for sp in sps:
             if sp.off not in by_mat:
                 self.put(sp.off + 0x14, "<I", 0)
         for mat, items in by_mat.items():

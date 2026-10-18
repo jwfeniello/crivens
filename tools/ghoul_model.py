@@ -92,6 +92,19 @@ def build(mesh, off, seen):
     return nodes
 
 
+def morph_target_names(mb):
+    """MORPH_TARGET_* names from a MeshHeader's key/value map, in blend-shape target order (the
+    game finds targets by name; each value is the target's weight slot, 4 bytes apart in order)."""
+    n, dp = struct.unpack_from("<II", mb, u32(mb, 0x10))
+    found = []
+    for i in range(n):
+        k, v, size = struct.unpack_from("<III", mb, dp + 12 * i)
+        name = cstr(mb, k)
+        if name.startswith("MORPH_TARGET_") and size == 4:
+            found.append((u32(mb, v), name[len("MORPH_TARGET_"):]))
+    return [name for _slot, name in sorted(found)]
+
+
 def read_model(desc):
     footer_ptr, nfoot = u32(desc, 0), u32(desc, 4)
     footer = [struct.unpack_from("<II", desc, footer_ptr + 8 * i) for i in range(nfoot)]

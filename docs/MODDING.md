@@ -65,7 +65,10 @@ garbage.
   mip count), u32, **u32 resource offset (+0x14)**, **u32 size (+0x18)**.
 - **Keep the node tree intact.** The game finds nodes like Cooper's face (`ndBlendShape`) at runtime.
   Unlinking one crashes on spawn. To hide geometry, zero its index lists instead
-  (`Model.hide_blend_shape`).
+  (`Model.hide_blend_shape`), or put new geometry in it (`Model.write_face`).
+- **Faces:** `Model.write_face` replaces the blend-shape head. Each vertex carries one position
+  offset per morph target (`Vertex.deltas`, in `Model.morph_target_names()` order). The materials
+  are the ndShaderParam2s inside the ndBlendShape subtree; its ndMtxArray gets its own palette.
 - **Textures:** `Model.add_texture` adds a texture of any size and `Model.set_material_texture`
   points a material at it. `Model.replace_texture` overwrites one in place (same size, single-level
   DXT1). The byte at +0x0E registers a texture in a global texture bank; it's 0 on Cooper's, so
@@ -100,17 +103,39 @@ The Sonic example (I used Sonic Unleashed (Wii) rip from The Models Resource):
    blender -b --python blender/bl_sonic_export.py -- Sonic.DAE sonic.npz N100,N101,N104,N105,N106,N107,N108,N109,N114,N115
    ```
    The last argument picks the parts to keep. The rip has 12 hand poses and 2 mouths;
-   `blender/bl_parts.py` renders every part so you can choose.
+   `blender/bl_parts.py` renders every part so you can choose. The input can also be a .blend
+   with shape keys (see Expressions below).
 2. Build the model asset:
    ```
    python -I tools/sonic_build.py <Model__aid_model_ghoulies_actor_boy dir> sonic.npz <Textures dir> <out_dir> [height] [--fit-textures]
    ```
    This moves Cooper's skeleton onto Sonic's joints, maps Sonic's bones to Cooper's (table at the
    top of the script), writes the geometry, adds Sonic's three textures at full size on the
-   materials that used Cooper's skin (11), jumper (8) and texture 7, and hides Cooper's face.
-   Height defaults to 21 (Cooper's height). `--fit-textures` shrinks the textures into Cooper's
-   slots instead of adding new ones.
+   materials that used Cooper's skin (11), jumper (8) and texture 7, and puts the head into
+   Cooper's face mesh so the game drives its expressions. Height defaults to 21 (Cooper's height).
+   `--fit-textures` shrinks the textures into Cooper's slots instead of adding new ones.
+   `--no-face` keeps the head in the body and hides Cooper's face.
 3. Copy `out_dir` to `<mod_dir>/assets/aid_model_ghoulies_actor_boy/` and build the disc.
+
+### Expressions
+
+Every triangle bound only to the head or eye bones goes into the face mesh. The pupils go on
+Cooper's eye bones, so they follow his eye movement. The game picks Cooper's expressions by name,
+so the new head needs a morph target for each one: BLINK, ANGRY, ANGRY1, HIT, MOUTH_OPEN, SMILE,
+HIT1, HIT2, HAIR_SPIKE, SCARED, RAISE_BROW, CHEEK_BLOW. Render Cooper's with
+`blender/bl_face_targets.py` to see what each one does.
+
+`sonic_build.py` generates three of them: BLINK (a blue copy of each eye white sits just behind
+it and moves out in front, and the pupils move back), MOUTH_OPEN (the mouth's lower half drops)
+and HAIR_SPIKE (the quills fan out). To make the rest, sculpt them as shape keys:
+
+```
+blender -b --python blender/bl_face_template.py -- Sonic.DAE sonic_face.blend N100,N101,N104,N105,N106,N107,N108,N109,N114,N115
+```
+
+This saves the kept parts with an empty shape key per expression. Sculpt any of them, then give
+the .blend to `bl_sonic_export.py` in place of the .DAE. A sculpted key replaces the generated
+version (the eyelids still close on BLINK); keys left alone don't move anything.
 
 For a different character, change the bone map, part list and material table in
 `sonic_build.py`. Cooper's bones: BASE, BACK, BACK_A, NECK, HEAD, LF_/RT_ S E W (shoulder,
